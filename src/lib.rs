@@ -1,8 +1,16 @@
-use futures::executor;
-use hyper::{Body, Client, Request};
+use reqwest;
+use serde::Deserialize;
 use std::error::Error;
+use std::io::{Error as IoErr, ErrorKind};
 use std::result::Result;
 use yup_oauth2::{GetToken, Token};
+
+#[derive(Deserialize)]
+pub struct _Token {
+    access_token: String,
+    expires_in: i64,
+    token_type: String,
+}
 
 /// foo
 pub struct MetadataServerFlow;
@@ -17,34 +25,23 @@ impl GetToken for MetadataServerFlow {
         T: AsRef<str> + 'b,
         I: IntoIterator<Item = &'b T>,
     {
-        log::debug!("DefaultApplicationCredentials: checking metadata server...");
-        let error;
         let uri = "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token";
-        let req = Request::builder()
-            .uri(uri)
-            .header("Metadata-Flavor", "Google")
-            .body(Body::empty())
-            .unwrap();
-        let client = Client::new();
-        let response = executor::block_on(client.request(req));
-        match response {
-            Ok(response) => {
-                let (head, body) = response.into_parts();
-                //let body = hyper::body::to_bytes(body).await?;
-                log::debug!("Received response; head: {:?} body: {:?}", head, body);
+        let client = reqwest::blocking::Client::new();
+        let response = client.get(uri).header("Metadata-Flavor", "Google").send()?;
+        match response.status() {
+            reqwest::StatusCode::OK => {
+                let dt: _Token = response.json()?;
                 let token = Token {
-                    access_token: "".to_string(),
+                    access_token: dt.access_token,
+                    expires_in: Some(dt.expires_in),
+                    token_type: dt.token_type,
                     refresh_token: "".to_string(),
-                    token_type: "".to_string(),
-                    expires_in: Some(0),
                     expires_in_timestamp: Some(0),
                 };
-                //return Ok(TokenInfo::from_json(&body)?);
-                //let token = serde_json::from_slice(body)?;
                 return Ok(token);
             }
-            Err(new_error) => error = new_error,
-        }
-        Err(error.into())
+            s => log::warn!("Received response status: {:?}", s),
+        };
+        Err(Box::new(IoErr::new(ErrorKind::Other, "Unexpected error")))
     }
 }
