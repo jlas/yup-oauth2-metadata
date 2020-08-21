@@ -12,10 +12,8 @@ pub struct _Token {
     token_type: String,
 }
 
-/// foo
 pub struct MetadataServerFlow;
 
-/// bar
 impl GetToken for MetadataServerFlow {
     fn api_key(&mut self) -> Option<String> {
         None
